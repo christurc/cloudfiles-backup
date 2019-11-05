@@ -106,7 +106,6 @@ module.exports = class {
 
   async download(container, fileObject) {
     const url = new URL(urlJoin(this.publicUrl.href, container, fileObject.name))
-    const targetPath = path.join(targetBasePath, fileObject.name)
 
     var options = {
       method: 'GET',

@@ -3,6 +3,8 @@ const fs = require('fs')
 const path = require('path')
 const each = require('async/each')
 const cmdArgs = require('command-line-args')
+const crypto = require('crypto')
+const maxObjects = 20
 
 const dirContentType = 'application/directory'
 
@@ -46,10 +48,11 @@ async function main() {
   const api = new CloudFilesApi(options.apiKey, options.userName)
   await api.authenticate()
 
-  var storageObjects = await api.getStorageObjects(options.container, 5)
+  var storageObjects = await api.getStorageObjects(options.container, maxObjects)
 
   console.log(`* Total objects found: ${storageObjects.length}`)
 
+  // change this to perform synchronously
   each(storageObjects, async function(o) {
 
     if(o.content_type === dirContentType) {
@@ -58,7 +61,7 @@ async function main() {
     }
 
     if(o.bytes > 0) {
-      await handleFile()
+      await handleFile(api, o)
     }
 
   }, function(err) {
@@ -77,17 +80,61 @@ function handleDirectory(pathInContainer) {
   }
 }
 
-async function handleFile(fileObject) {
+async function handleFile(api, fileObject) {
   let targetPath = path.join(options.targetPath, fileObject.name)
+  let actualHash = ''
 
   if(fs.existsSync(targetPath)){
-    return
+    actualHash = await calculateHash(targetPath)
+
+    if(fileObject.hash === actualHash) {
+      console.log(`* File found ${targetPath} and is valid`)
+      return
+    }
+    else {
+      console.log(`* File found ${targetPath} but is NOT valid, attempting to redownload`)
+      console.log(`  Expected ${fileObject.hash}`)
+      console.log(`  Actual ${actualHash}`)
+    }
   }
 
-  var fileBuffer = await api.download(options.container, fileObject)
+  actualHash = ''
 
-  console.log(`* writing to: ${targetPath}`)
-  fs.writeFileSync(targetPath, stream)
+  let fileBuffer = await api.download(options.container, fileObject)
+  let hasher = crypto.createHash('md5')
+
+  hasher.update(fileBuffer)
+
+  actualHash = hasher.digest('hex')
+
+  if(fileObject.hash === actualHash) {
+    console.log(`* writing to: ${targetPath}`)
+    fs.writeFileSync(targetPath, fileBuffer)
+  }
+  else {
+    console.error(`* ERROR: Downloaded ${targetPath} was corrupt`)
+    console.log(`  Expected ${fileObject.hash}`)
+    console.log(`  Actual ${actualHash}`)
+  }
+}
+
+async function calculateHash(filePath) {
+  let hasher = crypto.createHash('md5')
+  let stream = fs.createReadStream(filePath)
+
+  return new Promise((resolve, reject) => {
+    hasher.setEncoding('hex')
+    
+    stream.on("error", error => reject(error));
+
+    stream.on('end', function() {
+      hasher.end()
+      resolve(hasher.read())
+    })
+
+    stream.pipe(hasher) 
+  })
+
 }
 
 try {
