@@ -1,10 +1,9 @@
-const CloudFilesApi = require('./cloudFilesApi')
 const fs = require('fs')
 const path = require('path')
 const each = require('async/each')
+const _ = require('lodash')
 const cmdArgs = require('command-line-args')
 const crypto = require('crypto')
-const maxObjects = 20
 
 const dirContentType = 'application/directory'
 
@@ -12,10 +11,20 @@ const optionDefinitions = [
   { name: 'apiKey', alias: 'k', type: String },
   { name: 'userName', alias: 'u', type: String },
   { name: 'container', alias: 'c', type: String },
-  { name: 'targetPath', alias: 'p', type: String }
+  { name: 'targetPath', alias: 'p', type: String },
+  { name: 'logPath', alias: 'l', type: String },
+  { name: 'maxObjects', alias: 'm', type: String }
 ]
 
 const options = cmdArgs(optionDefinitions)
+
+const pino = require('./logger')
+
+// this has to happen before requiring CloudFilesApi
+// otherwise logger in the api will be null
+const logger = pino.configure(options.logPath)
+
+const CloudFilesApi = require('./cloudFilesApi')
 
 if(!options.apiKey) {
   console.error(`* ERROR: --apiKey not provided`)
@@ -42,40 +51,38 @@ if(!fs.existsSync(options.targetPath)) {
   process.exit(1)
 }
 
+options.maxObjects = options.maxObjects || 9999
+
+
 // authorizes and gets the API key and endpoint uri for cloudfiles
 async function main() {
 
   const api = new CloudFilesApi(options.apiKey, options.userName)
   await api.authenticate()
 
-  var storageObjects = await api.getStorageObjects(options.container, maxObjects)
+  var storageObjects = await api.getStorageObjects(options.container, options.maxObjects)
 
-  console.log(`* Total objects found: ${storageObjects.length}`)
+  logger.info(`* Total objects found: ${storageObjects.length}`)
 
-  // change this to perform synchronously
-  each(storageObjects, async function(o) {
+  for(const o of storageObjects) {
 
     if(o.content_type === dirContentType) {
       handleDirectory(o.name)
-      return
+      continue
     }
 
     if(o.bytes > 0) {
       await handleFile(api, o)
     }
 
-  }, function(err) {
-    if(err) {
-      console.log(err)
-    }
-  })
+  }
 }
 
 function handleDirectory(pathInContainer) {
   let targetPath = path.join(options.targetPath, pathInContainer)
 
   if(!fs.existsSync(targetPath)){
-    console.log(`* creating dir: ${targetPath}`)
+    logger.info(`* creating dir: ${targetPath}`)
     fs.mkdirSync(targetPath, { recursive: true })
   }
 }
@@ -88,13 +95,13 @@ async function handleFile(api, fileObject) {
     actualHash = await calculateHash(targetPath)
 
     if(fileObject.hash === actualHash) {
-      console.log(`* File found ${targetPath} and is valid`)
+      logger.info(`* File found ${targetPath} and is valid`)
       return
     }
     else {
-      console.log(`* File found ${targetPath} but is NOT valid, attempting to redownload`)
-      console.log(`  Expected ${fileObject.hash}`)
-      console.log(`  Actual ${actualHash}`)
+      logger.info(`* File found ${targetPath} but is NOT valid, attempting to redownload`)
+      logger.info(`  Expected ${fileObject.hash}`)
+      logger.info(`  Actual ${actualHash}`)
     }
   }
 
@@ -108,13 +115,13 @@ async function handleFile(api, fileObject) {
   actualHash = hasher.digest('hex')
 
   if(fileObject.hash === actualHash) {
-    console.log(`* writing to: ${targetPath}`)
+    logger.info(`* writing to: ${targetPath}`)
     fs.writeFileSync(targetPath, fileBuffer)
   }
   else {
-    console.error(`* ERROR: Downloaded ${targetPath} was corrupt`)
-    console.log(`  Expected ${fileObject.hash}`)
-    console.log(`  Actual ${actualHash}`)
+    logger.error(`* ERROR: Downloaded ${targetPath} was corrupt`)
+    logger.info(`  Expected ${fileObject.hash}`)
+    logger.info(`  Actual ${actualHash}`)
   }
 }
 
@@ -140,6 +147,6 @@ async function calculateHash(filePath) {
 try {
   main()
 } catch(e) {
-  console.log(e)
+  logger.error(e)
   process.exit(1)
 }
