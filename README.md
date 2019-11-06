@@ -18,12 +18,12 @@ I have made no attempts to publish this on NPM so you're going to just have to c
 
 ### Options
 
-* `-apiKey`: Rackspace API Key, alias `-k`, required
-* `-userName`: Rackspace user name, alias `-u`, required
-* `-container`: Rackspace CloudFiles container to backup, alias `-c`, required
-* `-targetPath`: The local path to where you want to store the files, alias `-p`, required
-* `-maxObjects`: The max number of objects to sync, alias `-m`, required
-* `-logPath`: The location the logs will be written. Path must exist otherwise logs will not be written, alias `-l`, required
+* `--apiKey`: Rackspace API Key, alias `-k`, required
+* `--userName`: Rackspace user name, alias `-u`, required
+* `--container`: Rackspace CloudFiles container to backup, alias `-c`, required
+* `--targetPath`: The local path to where you want to store the files, alias `-p`, required
+* `--maxObjects`: The max number of objects to sync, alias `-m`, optional, default 9999
+* `--logPath`: The location the logs will be written. Path must exist otherwise logs will not be written, alias `-l`, optional
 
 #### Example
 
